@@ -9,7 +9,9 @@
 (defparameter *screen-width* 640)
 (defparameter *screen-height* 480)
 (defparameter *ticks* 0)
-(defparameter *ship-wing-angle* 20)
+(defparameter *ship-wing-angle* 15)
+(defparameter *ship-nose-len* -15)
+(defparameter *ship-wing-len* 25)
 
 (defun get-ticks ()
     (let* ((current (sdl:sdl-get-ticks))
@@ -27,8 +29,6 @@
     
      (velocity :accessor velocity :initform '(0 . 0) :initarg :velocity)
      
-     (ship-length :accessor ship-length :initform 25 :initarg :ship-length)
-     
      (rot-speed :accessor rot-speed :initform 250 :initarg :rot-speed)
      
      (turning :accessor turning :initform nil :initarg :turning)))
@@ -37,19 +37,19 @@
   ((ship :accessor ship :initform (make-instance 'ship) :initarg :ship)))
 
 (defun point-from-angle-length (coord angle len)
-    (sdl:point :x (+ (* (* len (cos (* angle (/ pi 180)))) -1) (sdl:x coord))
-           :y (+ (* (* len (sin (* angle (/ pi 180)))) 1) (sdl:y coord))))
+    (sdl:point :x (+ (sdl:x coord) (* (* len (cos (* angle (/ pi 180)))) -1))
+           :y (+ (sdl:y coord) (* len (sin (* angle (/ pi 180)))))))
 
 (defun get-angle-in-range (angle)
     (cond ((> angle 360) (get-angle-in-range (- angle 360)))
           ((< angle 0) (get-angle-in-range (+ angle 360)))
           (t angle)))
-          
+        
 (defmethod render ((ship ship))
-        (let* ((nose (point-from-angle-length (pos ship) (angle ship) (ship-length ship)))
-              (left (point-from-angle-length nose (+ (angle ship) *ship-wing-angle*) (ship-length ship)))
-              (right (point-from-angle-length nose (- (angle ship) *ship-wing-angle*) (ship-length ship))))
-      
+        (let* ((nose (point-from-angle-length (pos ship) (angle ship) *ship-nose-len*))
+              (left (point-from-angle-length nose (+ (angle ship) *ship-wing-angle*) *ship-wing-len*))
+              (right (point-from-angle-length nose (- (angle ship) *ship-wing-angle*) *ship-wing-len*)))
+            (sdl:draw-line (pos ship) nose :color sdl:*green*)
             (sdl:draw-line nose left :color sdl:*white*)
             (sdl:draw-line nose right :color sdl:*white*)
             (sdl:draw-line left right :color sdl:*white*)))
@@ -70,7 +70,9 @@
               (case key
                   (:sdl-key-a 
                     (setf (turning (ship world)) t)
-                    (setf (rot-speed (ship world)) (* (rot-speed (ship world)) -1)))
+                    (setf (rot-speed (ship world)) ((lambda (x) 
+                                                      (cond ((<= x 0) x)
+                                                            ((> x 0) (- 0 x)))) (rot-speed (ship world)))))
                   (:sdl-key-d 
                     (setf (turning (ship world)) t)
                     (setf (rot-speed (ship world)) (abs (rot-speed (ship world)))))  
@@ -91,4 +93,3 @@
                 (sdl:update-display))))))
 
 (main)
-
