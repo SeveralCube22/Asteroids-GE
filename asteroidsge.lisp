@@ -12,6 +12,8 @@
 (defparameter *ship-wing-angle* 15)
 (defparameter *ship-nose-len* -15)
 (defparameter *ship-wing-len* 25)
+(defparameter *ship-max-velocity* 10l0)
+(defparameter *ship-max-acceleration* 3.0)
 
 (defun get-ticks ()
     (let* ((current (sdl:sdl-get-ticks))
@@ -23,15 +25,19 @@
 (defclass ship ()
     ((angle  :accessor angle :initform 90.0 :initarg :angle)
      
+     (velocity-angle :accessor velocity-angle :initform 90.0 :initarg ::velocity-angle)
+
      (pos :accessor pos :initform (sdl:point :x 320 :y 240) :initarg :pos)
      
-     (acceleration :accessor acceleration :initform 3.0 :initarg :acceleration)
+     (acceleration :accessor acceleration :initform '(0 . 0) :initarg :acceleration)
     
-     (velocity :accessor velocity :initform '(0 . 0) :initarg :velocity)
+     (velocity :accessor velocity :initform 0.0 :initarg :velocity)
      
      (rot-speed :accessor rot-speed :initform 250 :initarg :rot-speed)
      
-     (turning :accessor turning :initform nil :initarg :turning)))
+     (turning :accessor turning :initform nil :initarg :turning)
+     
+     (thrusting :accessor thrusting :initform nil :initarg :thrusting)))
 
 (defclass world ()
   ((ship :accessor ship :initform (make-instance 'ship) :initarg :ship)))
@@ -54,8 +60,21 @@
             (sdl:draw-line nose right :color sdl:*white*)
             (sdl:draw-line left right :color sdl:*white*)))
 
+(defmethod thrust ((ship ship))
+    (setf (thrusting ship) t))
+
+(defmethod rotate-left ((ship ship))
+    (setf (rot-speed ship) ((lambda (x) 
+              (cond ((<= x 0) x)
+                        ((> x 0) (- 0 x)))) (rot-speed ship))))
+
+(defmethod rotate-right ((ship ship))
+    (setf (rot-speed ship) (abs (rot-speed ship))))
+
 (defmethod update ((ship ship) delta-time)
-  (cond ((turning ship) (setf (angle ship) (get-angle-in-range (+ (angle ship) (* (rot-speed ship) delta-time)))))))
+  (cond ((turning ship) (setf (angle ship) (get-angle-in-range (+ (angle ship) (* (rot-speed ship) delta-time))))))
+  (cond ((thrusting ship)) )
+  )
 
 (defun main ()
     (sdl:with-init  ()
@@ -70,12 +89,10 @@
               (case key
                   (:sdl-key-a 
                     (setf (turning (ship world)) t)
-                    (setf (rot-speed (ship world)) ((lambda (x) 
-                                                      (cond ((<= x 0) x)
-                                                            ((> x 0) (- 0 x)))) (rot-speed (ship world)))))
+                    (rotate-left (ship world)))
                   (:sdl-key-d 
                     (setf (turning (ship world)) t)
-                    (setf (rot-speed (ship world)) (abs (rot-speed (ship world)))))  
+                    (rotate-right (ship world)))  
                     ))
 
             (:key-up-event (:key key)
