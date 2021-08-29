@@ -1,4 +1,3 @@
-
 (ql:quickload "lispbuilder-sdl")
 (ql:quickload "lispbuilder-sdl-gfx")
 
@@ -12,8 +11,8 @@
 (defparameter *ship-wing-angle* 15)
 (defparameter *ship-nose-len* -15)
 (defparameter *ship-wing-len* 25)
-(defparameter *ship-max-velocity* 10l0)
-(defparameter *ship-max-acceleration* 3.0)
+(defparameter *ship-max-velocity* 10.0)
+(defparameter *ship-acceleration* 3)
 
 (defun get-ticks ()
     (let* ((current (sdl:sdl-get-ticks))
@@ -29,15 +28,13 @@
 
      (pos :accessor pos :initform (sdl:point :x 320 :y 240) :initarg :pos)
      
-     (acceleration :accessor acceleration :initform '(0 . 0) :initarg :acceleration)
+     (acceleration :accessor acceleration :initform 0.0 :initarg :acceleration)
     
      (velocity :accessor velocity :initform 0.0 :initarg :velocity)
      
      (rot-speed :accessor rot-speed :initform 250 :initarg :rot-speed)
      
-     (turning :accessor turning :initform nil :initarg :turning)
-     
-     (thrusting :accessor thrusting :initform nil :initarg :thrusting)))
+     (turning :accessor turning :initform nil :initarg :turning)))
 
 (defclass world ()
   ((ship :accessor ship :initform (make-instance 'ship) :initarg :ship)))
@@ -60,8 +57,20 @@
             (sdl:draw-line nose right :color sdl:*white*)
             (sdl:draw-line left right :color sdl:*white*)))
 
+
 (defmethod thrust ((ship ship))
-    (setf (thrusting ship) t))
+    (setf (acceleration ship) *ship-acceleration*)
+    (let* ((v2x (+ (* (velocity ship) (cos (* (velocity-angle ship) (/ pi 180))))  (* (acceleration ship) (cos (* (angle ship) (/ pi 180))))))
+           (v2y (+ (* (velocity ship) (sin (* (velocity-angle ship) (/ pi 180))))  (* (acceleration ship) (sin (* (angle ship) (/ pi 180))))))
+           (velocity (sqrt (+ (* v2x v2x) (* v2y v2y))))
+           (velocity-angle (atan (/ v2y v2x))))
+            
+            (cond ((> velocity *ship-max-velocity*) (setf (velocity ship) *ship-max-velocity*))
+                  (t (setf (velocity ship) velocity)))
+            (setf (velocity-angle ship) velocity-angle)))
+
+(defmethod stop-thrust ((ship ship))
+    (setf (acceleration ship) 0.0))
 
 (defmethod rotate-left ((ship ship))
     (setf (rot-speed ship) ((lambda (x) 
@@ -73,7 +82,22 @@
 
 (defmethod update ((ship ship) delta-time)
   (cond ((turning ship) (setf (angle ship) (get-angle-in-range (+ (angle ship) (* (rot-speed ship) delta-time))))))
-  (cond ((thrusting ship)) )
+  (let* ((vx (* (velocity ship) (cos (* (velocity-angle ship) (/ pi 180))))) 
+         (vy (* (velocity ship) (sin (* (velocity-angle ship) (/ pi 180)))))
+         (dx (* vx delta-time))
+         (dy (* vy delta-time))
+         (x (+ dx (sdl:x (pos ship))))
+         (y (+ dy (sdl:y (pos ship)))))
+        
+         (cond ((< x 0) (setf x 640))
+               ((> x 640) (setf x 0)))
+
+         (cond ((< y 0) (setf y 480))
+               ((> y 480) (setf y 0)))
+
+         (setf (pos ship) (sdl:point :x x :y y)))
+  
+  (check-collision)
   )
 
 (defun main ()
@@ -93,6 +117,9 @@
                   (:sdl-key-d 
                     (setf (turning (ship world)) t)
                     (rotate-right (ship world)))  
+                    
+                  (:sdl-key-space
+                        )
                     ))
 
             (:key-up-event (:key key)
