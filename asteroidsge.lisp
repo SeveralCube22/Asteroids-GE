@@ -155,7 +155,6 @@
                 (sdl:clear-display sdl:*black*)
                 (update (ship world) (get-ticks))
                 (render (ship world))
-                (rotate-left (ship world))
                 (sdl:update-display))))))
 
 (main)
