@@ -35,7 +35,8 @@
      (velocity :accessor velocity :initform 0.0 :initarg :velocity)
      (rot-speed :accessor rot-speed :initform 300 :initarg :rot-speed)
      (turning :accessor turning :initform nil :initarg :turning)
-     (thrusting :accessor thrusting :initform nil :initarg :thrusting)))
+     (thrusting :accessor thrusting :initform nil :initarg :thrusting)
+     (shooting :accessor shooting :initform nil :initarg :shooting))
 
 (defclass asteroid ()
     ((velocity-angle :accessor velocity-angle :initform (+ 0 (random 340)) :initarg :velocity-angle)
@@ -44,9 +45,16 @@
      (state :accessor state :initarg :state) 
      (radius :accessor radius :initarg :radius)))
 
+(defclass bullet ()
+    ((velocity-angle :accessor velocity-angle :initarg :velocity-angle)
+     (velocity :accessor velocity :initform 100 :initarg :velocity)
+     (pos :accessor pos :initarg :pos)
+     (radius :accessor radius :initform 10 :initarg :radius)))
+
 (defclass world ()
   ((ship :accessor ship :initform (make-instance 'ship) :initarg :ship)
    (asteroids :accessor asteroids :initform nil :initarg :asteroids)
+   (bullets :accessor bullets :initform nil :initarg :bullets)
    (game-over :accessor game-over :initform nil :initarg :game-over))) ; list of asteroids
 
 (defun point-from-angle-length (coord angle len)
@@ -91,6 +99,9 @@
 
 (defmethod stop-thrust ((ship ship))
     (setf (acceleration ship) 0.0))
+
+(defmethod shoot ((world world)) 
+    (cond ((shooting (ship world) (setf (bullets world) (cons (make-instance 'bullet :velocity-angle (angle (ship world)) :pos (pos (ship world))) (bullets world))
 
 (defmethod rotate-left ((ship ship))
     (setf (rot-speed ship) ((lambda (x) 
