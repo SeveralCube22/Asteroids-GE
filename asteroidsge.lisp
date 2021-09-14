@@ -12,13 +12,15 @@
 (defparameter *ship-nose-len* -15)
 (defparameter *ship-wing-len* 25)
 (defparameter *ship-radius* 10)
-(defparameter *ship-max-velocity* 500.0) ; weird values because don't know how to setup delta-time
+(defparameter *ship-max-velocity* 500.0) ; weird values because don't know how to properly setup delta-time
 (defparameter *ship-acceleration* 100)
 (defparameter *ship-acceleration-scaling* .90)
 (defparameter *asteroid-max-states* 3)
 (defparameter *max-asteroids-spawn* 5)
 (defparameter *asteroid-init-speed* 70)
 (defparameter *asteroid-init-radius* 30)
+(defparameter *bullet-radius* 3)
+(defparameter *bullet-velocity* 300)
 
 (defun get-ticks ()
     (let* ((current (sdl:sdl-get-ticks))
@@ -36,20 +38,20 @@
      (rot-speed :accessor rot-speed :initform 300 :initarg :rot-speed)
      (turning :accessor turning :initform nil :initarg :turning)
      (thrusting :accessor thrusting :initform nil :initarg :thrusting)
-     (shooting :accessor shooting :initform nil :initarg :shooting))
+     (shooting :accessor shooting :initform nil :initarg :shooting)))
 
 (defclass asteroid ()
     ((velocity-angle :accessor velocity-angle :initform (+ 0 (random 340)) :initarg :velocity-angle)
      (velocity :accessor velocity :initarg :velocity)
-     (pos :accessor pos :initform (sdl:point :x (random 640) :y (random 480)) :initarg :pos)
+     (pos :accessor pos :initarg :pos)
      (state :accessor state :initarg :state) 
      (radius :accessor radius :initarg :radius)))
 
 (defclass bullet ()
     ((velocity-angle :accessor velocity-angle :initarg :velocity-angle)
-     (velocity :accessor velocity :initform 100 :initarg :velocity)
+     (velocity :accessor velocity :initform *bullet-velocity* :initarg :velocity)
      (pos :accessor pos :initarg :pos)
-     (radius :accessor radius :initform 10 :initarg :radius)))
+     (radius :accessor radius :initform *bullet-radius* :initarg :radius)))
 
 (defclass world ()
   ((ship :accessor ship :initform (make-instance 'ship) :initarg :ship)
@@ -78,6 +80,9 @@
 (defmethod render ((asteroid asteroid))
   (sdl:draw-circle (pos asteroid) (radius asteroid) :color sdl:*white*))
 
+(defmethod render ((bullet bullet))
+  (sdl:draw-circle (pos bullet) (radius bullet) :color sdl:*white*))
+
 
 (defmethod thrust ((ship ship))
     (setf (acceleration ship) (+ (* *ship-acceleration-scaling* (acceleration ship)) 1))
@@ -101,7 +106,11 @@
     (setf (acceleration ship) 0.0))
 
 (defmethod shoot ((world world)) 
-    (cond ((shooting (ship world) (setf (bullets world) (cons (make-instance 'bullet :velocity-angle (angle (ship world)) :pos (pos (ship world))) (bullets world))
+    (cond ((shooting (ship world)) 
+        (setf (bullets world) 
+              (cons
+               (make-instance 'bullet :velocity-angle (angle (ship world)) :pos (pos (ship world))) 
+               (bullets world))))))
 
 (defmethod rotate-left ((ship ship))
     (setf (rot-speed ship) ((lambda (x) 
@@ -151,20 +160,52 @@
         
   (render asteroid))
 
+
+(defmethod update ((bullet bullet) delta-time)
+   (let* ((vx (* (velocity bullet) (cos (* (velocity-angle bullet) (/ pi 180))))) 
+          (vy (* (velocity bullet) (sin (* (velocity-angle bullet) (/ pi 180)))))
+          (dx (* vx delta-time))
+          (dy (* vy delta-time))
+          (x (+ (sdl:x (pos bullet)) dx))
+          (y (- (sdl:y (pos bullet)) dy)))
+        
+        (setf (pos bullet) (sdl:point :x x :y y)))
+        
+  (render bullet))
+
 (defmethod update ((world world) delta-time)
   (update (ship world) delta-time)
+  (shoot world)
+  (dolist (bullet (bullets world))
+    (update bullet delta-time)
+    )
+
   (dolist (asteroid (asteroids world))
            (update asteroid delta-time)
            (cond ((> (expt (+ *ship-radius* (radius asteroid)) 2) (+ (expt (- (sdl:x (pos (ship world))) (sdl:x (pos asteroid))) 2)
                                                                      (expt (- (sdl:y (pos (ship world))) (sdl:y (pos asteroid))) 2))) 
-                      (setf (game-over world) t)))))
+                      (setf (game-over world) t)))
+           (dolist (bullet (bullets world))
+                    (cond ((> (expt (+ (radius bullet) (radius asteroid)) 2) (+ (expt (- (sdl:x (pos bullet)) (sdl:x (pos asteroid))) 2)
+                                                                     (expt (- (sdl:y (pos bullet)) (sdl:y (pos asteroid))) 2))) 
+                      (setf (asteroids world) (remove asteroid (asteroids world)))
+                      (setf (bullets world) (remove bullet (bullets world)))
+                      (cond ((< (state asteroid) 3)
+                                (setf (asteroids world) (append (asteroids world) (create-asteroids (mod (+ (sate asteroids) 1) 3)
+                                                                                                    (+ (state asteroids) 1) (pos asteroid)))))))))))
+                                                                                                    
+
+(defun create-asteroids (num state pos)
+     (cond ((= pos 0) (setf pos (sdl:point :x (random 640) :y (random 480)))))
+
+     (let ((asteroids nil))
+        (dotimes (number num)
+            (setf asteroids (cons (make-instance 'asteroid :pos pos :state state :velocity (* *asteroid-init-speed* (/ state 1.5)) :radius (/ *asteroid-init-radius* state)) 
+                                    asteroids)))
+        asteroids))
 
 (defmethod init-asteroids ((world world))
-   (dotimes (number *max-asteroids-spawn*)
-      (setf (asteroids world) (cons (make-instance 'asteroid :state 1 :velocity *asteroid-init-speed* :radius *asteroid-init-radius*) 
-                                    (asteroids world))))
-      
-    (asteroids world))
+   (setf (asteroids world) (create-asteroids *max-asteroids-spawn* 1 0)))
 
 (defun main ()
     (sdl:with-init  ()
@@ -186,8 +227,10 @@
                     (rotate-left (ship world)))  
                     
                   (:sdl-key-space
-                        (setf (thrusting (ship world)) t))
-                    ))
+                    (setf (thrusting (ship world)) t))
+
+                  (:sdl-key-f
+                    (setf (shooting (ship world)) t))))
 
             (:key-up-event (:key key)
               (case key
@@ -200,7 +243,8 @@
                   (:sdl-key-space 
                     (setf (thrusting (ship world)) nil))
                     
-                    ))
+                  (:sdl-key-f
+                    (setf (shooting (ship world)) nil))))
                   
             (:idle ()
                 (sdl:clear-display sdl:*black*)
@@ -208,4 +252,3 @@
                 (sdl:update-display))))))
 
 (main)
-
