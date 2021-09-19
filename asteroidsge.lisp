@@ -178,7 +178,11 @@
   (shoot world)
   (dolist (bullet (bullets world))
     (update bullet delta-time)
-    )
+      (cond ((< (sdl:x (pos bullet)) 0) (setf (bullets world) (remove bullet (bullets world))))
+               ((> (sdl:x (pos bullet)) 640) (setf (bullets world) (remove bullet (bullets world)))))
+
+        (cond ((< (sdl:y (pos bullet)) 0) (setf (bullets world) (remove bullet (bullets world))))
+               ((> (sdl:y (pos bullet)) 480) (setf (bullets world) (remove bullet (bullets world))))))
 
   (dolist (asteroid (asteroids world))
            (update asteroid delta-time)
@@ -191,21 +195,40 @@
                       (setf (asteroids world) (remove asteroid (asteroids world)))
                       (setf (bullets world) (remove bullet (bullets world)))
                       (cond ((< (state asteroid) 3)
-                                (setf (asteroids world) (append (asteroids world) (create-asteroids (mod (+ (sate asteroids) 1) 3)
-                                                                                                    (+ (state asteroids) 1) (pos asteroid)))))))))))
+                                (setf (asteroids world) (append (asteroids world) (create-asteroids (mod (+ (state asteroid) 1) 3)
+                                                                                                    (+ (state asteroid) 1) (pos asteroid) nil)))))))))
+                                                                                                    
+           (let ((num-asteroids 0))
+                (dolist (asteroid (asteroids world))
+                        (cond ((= (state asteroid) 1) (incf num-asteroids))))
+                
+                (setf (asteroids world) (append (asteroids world) (create-asteroids (- *max-asteroids-spawn* num-asteroids) 1 nil t)))))
+
+(defmethod see ((world world))
+  (let ((directions nil))
+    (do ((i 0 (+ i 1)))
+        (>= i 8)
+      (let ((angle (* i 45)))
+        (dotimes (asteroid (asteroids world))
+
+        )
+      )
+    )
+  )
+)
                                                                                                     
 
-(defun create-asteroids (num state pos)
-     (cond ((= pos 0) (setf pos (sdl:point :x (random 640) :y (random 480)))))
+(defun create-asteroids (num state pos randomp)
+     (cond (randomp (setf pos (sdl:point :x (random 640) :y (random 480)))))
 
      (let ((asteroids nil))
         (dotimes (number num)
-            (setf asteroids (cons (make-instance 'asteroid :pos pos :state state :velocity (* *asteroid-init-speed* (/ state 1.5)) :radius (/ *asteroid-init-radius* state)) 
+            (setf asteroids (cons (make-instance 'asteroid :pos pos :state state :velocity (* *asteroid-init-speed* (/ state 1.3)) :radius (/ *asteroid-init-radius* state)) 
                                     asteroids)))
         asteroids))
 
 (defmethod init-asteroids ((world world))
-   (setf (asteroids world) (create-asteroids *max-asteroids-spawn* 1 0)))
+   (setf (asteroids world) (create-asteroids *max-asteroids-spawn* 1 nil t)))
 
 (defun main ()
     (sdl:with-init  ()
