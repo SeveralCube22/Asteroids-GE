@@ -1,6 +1,8 @@
 (ql:quickload "lispbuilder-sdl")
 (ql:quickload "lispbuilder-sdl-gfx")
 
+(load "/home/vmanam/Desktop/Repo/Asteroids/neuralnet.lisp")
+
 (defpackage :asteroids
   (:use :cl :sdl)
   (:export main))
@@ -21,6 +23,7 @@
 (defparameter *asteroid-init-radius* 30)
 (defparameter *bullet-radius* 3)
 (defparameter *bullet-velocity* 300)
+(defparameter  *shoot-delay* 15)
 
 (defun get-ticks ()
     (let* ((current (sdl:sdl-get-ticks))
@@ -57,7 +60,14 @@
   ((ship :accessor ship :initform (make-instance 'ship) :initarg :ship)
    (asteroids :accessor asteroids :initform nil :initarg :asteroids)
    (bullets :accessor bullets :initform nil :initarg :bullets)
-   (game-over :accessor game-over :initform nil :initarg :game-over))) ; list of asteroids
+   (game-over :accessor game-over :initform nil :initarg :game-over)
+   (neural-net :accessor neural-net :initform (make-instance 'asteroids-neural-net:neural-net :inNodes 3 :hiddenNodes 20 :outNodes 4) :initarg :neural-net)
+   (delay :accessor delay :initform 0)
+   (fitness :accessor fitness :initform 0)
+   (lifetime :accessor lifetime :initform 0)
+   (shots-fired :accessor shots-fired :initform 1)
+   (shots-hit :accessor shots-hit :initform 0)
+   (paused :accessor paused :initform nil)))
 
 (defun point-from-angle-length (coord angle len)
     (sdl:point :x (+ (sdl:x coord) (* (* len (cos (* angle (/ pi 180)))) -1))
@@ -91,12 +101,14 @@
     (let* ((v2x (+ (* (velocity ship) (cos (* (velocity-angle ship) (/ pi 180))))  (* (acceleration ship) (cos (* (angle ship) (/ pi 180))))))
            (v2y (+ (* (velocity ship) (sin (* (velocity-angle ship) (/ pi 180))))  (* (acceleration ship) (sin (* (angle ship) (/ pi 180))))))
            (velocity (sqrt (+ (* v2x v2x) (* v2y v2y))))
-           (velocity-angle (* (atan (/ v2y v2x)) (/ 180 pi)) ))
+           (velocity-angle (cond ((not (= v2x 0)) (* (atan (/ v2y v2x)) (/ 180 pi))))))
             
             (cond ((> velocity *ship-max-velocity*) (setf (velocity ship) *ship-max-velocity*))
                   (t (setf (velocity ship) velocity)))
 
-            (cond ((and (>= v2x 0) (< v2y 0)) (setf velocity-angle (+ velocity-angle 360)))
+            (cond ((= v2x 0) (<= v2y 0) (setf velocity-angle 270))
+                  ((= v2x 0) (>= v2y 0) (setf velocity-angle 90))
+                  ((and (> v2x 0) (< v2y 0)) (setf velocity-angle (+ velocity-angle 360)))
                   ((and (< v2x 0) (>= v2y 0)) (setf velocity-angle (+ velocity-angle 180)))
                   ((and (< v2x 0) (< v2y 0))  (setf velocity-angle (+ velocity-angle 180))))
 
@@ -105,12 +117,16 @@
 (defmethod stop-thrust ((ship ship))
     (setf (acceleration ship) 0.0))
 
-(defmethod shoot ((world world)) 
-    (cond ((shooting (ship world)) 
-        (setf (bullets world) 
-              (cons
-               (make-instance 'bullet :velocity-angle (angle (ship world)) :pos (pos (ship world))) 
-               (bullets world))))))
+(defmethod shoot ((world world))
+    (cond ((shooting (ship world))
+        (cond ((= (mod (delay world) *shoot-delay*) 0)
+                (setf (bullets world) 
+                  (cons
+                    (make-instance 'bullet :velocity-angle (angle (ship world)) :pos (pos (ship world))) 
+                    (bullets world)))))
+        (incf (delay world) 1)
+        (incf (shots-fired world) 1)
+        (cond ((> (delay world) *shoot-delay*) (setf (delay world) 0))))))
 
 (defmethod rotate-left ((ship ship))
     (setf (rot-speed ship) ((lambda (x) 
@@ -174,6 +190,7 @@
   (render bullet))
 
 (defmethod update ((world world) delta-time)
+  (incf (lifetime world) 1)
   (update (ship world) delta-time)
   (shoot world)
   (dolist (bullet (bullets world))
@@ -191,35 +208,58 @@
                       (setf (game-over world) t)))
            (dolist (bullet (bullets world))
                     (cond ((> (expt (+ (radius bullet) (radius asteroid)) 2) (+ (expt (- (sdl:x (pos bullet)) (sdl:x (pos asteroid))) 2)
-                                                                     (expt (- (sdl:y (pos bullet)) (sdl:y (pos asteroid))) 2))) 
+                                                                     (expt (- (sdl:y (pos bullet)) (sdl:y (pos asteroid))) 2)))
+                      (incf (shots-hit world) 1) 
                       (setf (asteroids world) (remove asteroid (asteroids world)))
                       (setf (bullets world) (remove bullet (bullets world)))
                       (cond ((< (state asteroid) 3)
                                 (setf (asteroids world) (append (asteroids world) (create-asteroids (mod (+ (state asteroid) 1) 3)
-                                                                                                    (+ (state asteroid) 1) (pos asteroid) nil)))))))))
+                                                                                                    (+ (state asteroid) 1) (pos asteroid) nil world)))))))))
                                                                                                     
            (let ((num-asteroids 0))
                 (dolist (asteroid (asteroids world))
                         (cond ((= (state asteroid) 1) (incf num-asteroids))))
                 
-                (setf (asteroids world) (append (asteroids world) (create-asteroids (- *max-asteroids-spawn* num-asteroids) 1 nil t)))))
+                (setf (asteroids world) (append (asteroids world) (create-asteroids (- *max-asteroids-spawn* num-asteroids) 1 nil t world)))))
 
 (defmethod see ((world world))
-  (let ((directions nil))
-    (do ((i 0 (+ i 1)))
-        (>= i 8)
-      (let ((angle (* i 45)))
-        (dotimes (asteroid (asteroids world))
+  (let ((direction nil)
+        (minDis 801))
 
-        )
-      )
-    )
-  )
-)
+      (dolist (asteroid (asteroids world))
+        (let* ((xDiff (- (sdl:x (pos asteroid)) (sdl:x (pos (ship world)))))
+               (yDiff (- (sdl:y (pos asteroid)) (sdl:y (pos (ship world)))))
+               (distance (sqrt (+ (expt xDiff 2) 
+                                 (expt yDiff 2))))
+               (angle (cond ((not (= xDiff 0)) (* (atan (/ yDiff xDiff)) (/ 180 pi))))))
+              
+            (cond ((= xDiff 0) (<= yDiff 0) (setf angle 270))
+                  ((= xDiff 0) (>= yDiff 0) (setf angle 90))
+                  ((and (> xDiff 0) (< yDiff 0)) (setf angle (+ angle 360)))
+                  ((and (< xDiff 0) (> yDiff 0)) (setf angle (+ angle 180)))
+                  ((and (< xDiff 0) (< yDiff 0))  (setf angle (+ angle 180))))
+
+            (cond ((< distance minDis) 
+                    (setf direction (list (/ distance 1d0) (/ angle 1d0)))))))
+      (cons (/ (acceleration (ship world)) 1d0) direction)))
+
+(defmethod calculate-fitness ((world world))
+  (setf (fitness world) (+ (* (shots-hit world) 10) (lifetime world)  (expt (/ (shots-hit world) (shots-fired world)) 2))))
                                                                                                     
 
-(defun create-asteroids (num state pos randomp)
-     (cond (randomp (setf pos (sdl:point :x (random 640) :y (random 480)))))
+(defun create-asteroids (num state pos randomp world)
+     (cond (randomp 
+              (setf pos 
+                        (let ((x 0)
+                              (y 0))
+                            (do ((i 0)) 
+                                ((not (= i 0)))
+                                
+                              (setf x (random 640))
+                              (setf y (random 480))
+                              (cond ((and (not (= x (sdl:x (pos (ship world))))) (not (= y (sdl:y (pos (ship world)))))) (setf i 1))))
+
+                            (sdl:point :x x :y y)))))
 
      (let ((asteroids nil))
         (dotimes (number num)
@@ -228,7 +268,7 @@
         asteroids))
 
 (defmethod init-asteroids ((world world))
-   (setf (asteroids world) (create-asteroids *max-asteroids-spawn* 1 nil t)))
+   (setf (asteroids world) (create-asteroids *max-asteroids-spawn* 1 nil t world)))
 
 (defun main ()
     (sdl:with-init  ()
@@ -237,6 +277,7 @@
         
       (let* ((world (make-instance 'world)))
        (init-asteroids world)
+       (asteroids-neural-net:init (neural-net world))
        (sdl:with-events ()
             (:quit-event () t)
 
@@ -251,6 +292,9 @@
                     
                   (:sdl-key-space
                     (setf (thrusting (ship world)) t))
+
+                  (:sdl-key-p
+                    (setf (paused world) (not (paused world))))
 
                   (:sdl-key-f
                     (setf (shooting (ship world)) t))))
@@ -270,8 +314,24 @@
                     (setf (shooting (ship world)) nil))))
                   
             (:idle ()
-                (sdl:clear-display sdl:*black*)
-                (if (not (game-over world)) (update world (get-ticks)))
+                (cond ((and (not (game-over world)) (not (paused world)))
+                        (sdl:clear-display sdl:*black*)
+                        (let ((out (asteroids-neural-net:feed (neural-net world) (see world) 3)))
+
+                            (cond ((> (first out) .8d0) (setf (thrusting (ship world)) t)) 
+                                  (t (setf (thrusting (ship world)) nil)))
+                            (cond ((> (second out) .8d0) (setf (shooting (ship world)) t)) 
+                                  (t (setf (shooting (ship world)) nil)))
+                            (cond ((> (third out) .8d0) 
+                                      (setf (turning (ship world)) t)
+                                      (rotate-left (ship world)))
+                                  ((> (fourth out) .8d0) 
+                                      (setf (turning (ship world)) t)
+                                      (rotate-right (ship world))) 
+                                  (t (setf (turning (ship world)) nil))))
+
+                        (update world (get-ticks))))
+
                 (sdl:update-display))))))
 
 (main)
