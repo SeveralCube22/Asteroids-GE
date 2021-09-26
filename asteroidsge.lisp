@@ -23,7 +23,11 @@
 (defparameter *asteroid-init-radius* 30)
 (defparameter *bullet-radius* 3)
 (defparameter *bullet-velocity* 300)
-(defparameter  *shoot-delay* 15)
+(defparameter *shoot-delay* 15)
+
+(defparameter *time* 5)
+(defparameter *population* 100)
+(defparameter *generations* 100)
 
 (defun get-ticks ()
     (let* ((current (sdl:sdl-get-ticks))
@@ -270,12 +274,40 @@
 (defmethod init-asteroids ((world world))
    (setf (asteroids world) (create-asteroids *max-asteroids-spawn* 1 nil t world)))
 
+(defmethod play ((world world) currTime)
+  (cond ((not (paused world))
+                        (sdl:clear-display sdl:*black*)
+                        (let ((out (asteroids-neural-net:feed (neural-net world) (see world) 3)))
+
+                            (cond ((> (first out) .8d0) (setf (thrusting (ship world)) t)) 
+                                  (t (setf (thrusting (ship world)) nil)))
+                            (cond ((> (second out) .8d0) (setf (shooting (ship world)) t)) 
+                                  (t (setf (shooting (ship world)) nil)))
+                            (cond ((> (third out) .8d0) 
+                                      (setf (turning (ship world)) t)
+                                      (rotate-left (ship world)))
+                                  ((> (fourth out) .8d0) 
+                                      (setf (turning (ship world)) t)
+                                      (rotate-right (ship world))) 
+                                  (t (setf (turning (ship world)) nil))))
+
+                        (update world (get-ticks)))))
+
+(defmethod alive ((world world))
+  (and (not (game-over world) (< currTime *time*))))
+
+
 (defun main ()
     (sdl:with-init  ()
         (sdl:window *screen-width* *screen-height* :title-caption "Asteroids")
         (setf (sdl:frame-rate) 60)
         
-      (let* ((world (make-instance 'world)))
+      (let* ((world (make-instance 'world))
+             (currTime 0)
+             (currPop 0)
+             (popluation nil)
+             (best-fitness -1)
+             (best-player nil))
        (init-asteroids world)
        (asteroids-neural-net:init (neural-net world))
        (sdl:with-events ()
@@ -314,23 +346,22 @@
                     (setf (shooting (ship world)) nil))))
                   
             (:idle ()
-                (cond ((and (not (game-over world)) (not (paused world)))
+                (cond ((alive world) (play world) (get-ticks))
+                      ((and (not (alive world)) (< currPop *population*))
+                        (setf world (make-instance 'world))
                         (sdl:clear-display sdl:*black*)
-                        (let ((out (asteroids-neural-net:feed (neural-net world) (see world) 3)))
-
-                            (cond ((> (first out) .8d0) (setf (thrusting (ship world)) t)) 
-                                  (t (setf (thrusting (ship world)) nil)))
-                            (cond ((> (second out) .8d0) (setf (shooting (ship world)) t)) 
-                                  (t (setf (shooting (ship world)) nil)))
-                            (cond ((> (third out) .8d0) 
-                                      (setf (turning (ship world)) t)
-                                      (rotate-left (ship world)))
-                                  ((> (fourth out) .8d0) 
-                                      (setf (turning (ship world)) t)
-                                      (rotate-right (ship world))) 
-                                  (t (setf (turning (ship world)) nil))))
-
-                        (update world (get-ticks))))
+                        (init-asteroids world)
+                        (asteroids-neural-net:init (neural-net world))
+                        (incf currPop)
+                        (cond ((> (calculate-fitness world) best-fitness)
+                                (asteroids-neural-net:save (neural-net world) "/home/vmanam/Desktop/Repo/Asteroids/out.txt") 
+                                (setf best-fitness (calculate-fitness world))
+                                (setf best-player (neural-net world)))))
+                      ((and (not (alive world)) (>= currPop *population*) (< currGen *generations*))
+                        nil
+                      
+                      )
+                )
 
                 (sdl:update-display))))))
 
