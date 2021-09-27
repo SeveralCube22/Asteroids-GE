@@ -18,16 +18,17 @@
 (defparameter *ship-acceleration* 100)
 (defparameter *ship-acceleration-scaling* .90)
 (defparameter *asteroid-max-states* 3)
-(defparameter *max-asteroids-spawn* 5)
+(defparameter *max-asteroids-spawn* 3)
 (defparameter *asteroid-init-speed* 70)
 (defparameter *asteroid-init-radius* 30)
 (defparameter *bullet-radius* 3)
 (defparameter *bullet-velocity* 300)
 (defparameter *shoot-delay* 15)
 
-(defparameter *time* 5)
-(defparameter *population* 100)
-(defparameter *generations* 100)
+(defparameter *time* 500)
+(defparameter *population* 4)
+(defparameter *generations* 3)
+(defparameter *mutatation-rate* .2)
 
 (defun get-ticks ()
     (let* ((current (sdl:sdl-get-ticks))
@@ -71,6 +72,7 @@
    (lifetime :accessor lifetime :initform 0)
    (shots-fired :accessor shots-fired :initform 1)
    (shots-hit :accessor shots-hit :initform 0)
+   (curr-time :accessor curr-time :initform 0)
    (paused :accessor paused :initform nil)))
 
 (defun point-from-angle-length (coord angle len)
@@ -248,7 +250,7 @@
       (cons (/ (acceleration (ship world)) 1d0) direction)))
 
 (defmethod calculate-fitness ((world world))
-  (setf (fitness world) (+ (* (shots-hit world) 10) (lifetime world)  (expt (/ (shots-hit world) (shots-fired world)) 2))))
+  (setf (fitness world) (+ (* (shots-hit world) 10.0) (lifetime world)  (expt (/ (shots-hit world) (shots-fired world)) 2.0))))
                                                                                                     
 
 (defun create-asteroids (num state pos randomp world)
@@ -274,7 +276,7 @@
 (defmethod init-asteroids ((world world))
    (setf (asteroids world) (create-asteroids *max-asteroids-spawn* 1 nil t world)))
 
-(defmethod play ((world world) currTime)
+(defmethod play-game ((world world))
   (cond ((not (paused world))
                         (sdl:clear-display sdl:*black*)
                         (let ((out (asteroids-neural-net:feed (neural-net world) (see world) 3)))
@@ -290,12 +292,24 @@
                                       (setf (turning (ship world)) t)
                                       (rotate-right (ship world))) 
                                   (t (setf (turning (ship world)) nil))))
-
-                        (update world (get-ticks)))))
+                        (incf (curr-time world))
+                        (update world (get-ticks))
+                        )))
 
 (defmethod alive ((world world))
-  (and (not (game-over world) (< currTime *time*))))
+  (and (not (game-over world)) (< (curr-time world) *time*)))
 
+(defun calculate-total-fit (population)
+  (let ((total-fit 0.0))
+    (dolist (p population)
+      (setf total-fit (+ total-fit (fitness p))))
+    total-fit))
+
+(defun select-random-player (population total-fit)
+  (let ((rand (random total-fit)))
+    (dolist (p population)
+      (cond ((< rand (fitness p)) (return-from select-random-player p))
+            (t (setf rand (- rand (fitness p))))))))
 
 (defun main ()
     (sdl:with-init  ()
@@ -303,9 +317,10 @@
         (setf (sdl:frame-rate) 60)
         
       (let* ((world (make-instance 'world))
-             (currTime 0)
-             (currPop 0)
-             (popluation nil)
+             (init t)
+             (curr-pop 0)
+             (curr-gen 0)
+             (population (list world))
              (best-fitness -1)
              (best-player nil))
        (init-asteroids world)
@@ -329,7 +344,14 @@
                     (setf (paused world) (not (paused world))))
 
                   (:sdl-key-f
-                    (setf (shooting (ship world)) t))))
+                    (setf (shooting (ship world)) t))
+                    
+                  (:sdl-key-l 
+                    (let ((net (asteroids-neural-net:read-net "/home/vmanam/Desktop/Repo/Asteroids/out.txt"))
+                          (new-world (make-instance 'world)))
+                      (setf (neural-net new-world) net)
+                      (setf world new-world)
+                      (init-asteroids world)))))
 
             (:key-up-event (:key key)
               (case key
@@ -346,22 +368,55 @@
                     (setf (shooting (ship world)) nil))))
                   
             (:idle ()
-                (cond ((alive world) (play world) (get-ticks))
-                      ((and (not (alive world)) (< currPop *population*))
-                        (setf world (make-instance 'world))
-                        (sdl:clear-display sdl:*black*)
-                        (init-asteroids world)
-                        (asteroids-neural-net:init (neural-net world))
-                        (incf currPop)
+                (cond ((alive world) (play-game world))
+                    
+                      ((and (not (alive world)) (< curr-pop *population*))
                         (cond ((> (calculate-fitness world) best-fitness)
                                 (asteroids-neural-net:save (neural-net world) "/home/vmanam/Desktop/Repo/Asteroids/out.txt") 
                                 (setf best-fitness (calculate-fitness world))
-                                (setf best-player (neural-net world)))))
-                      ((and (not (alive world)) (>= currPop *population*) (< currGen *generations*))
-                        nil
-                      
-                      )
-                )
+                                (setf best-player (neural-net world))))
+                        (sdl:clear-display sdl:*black*)
+                        (incf curr-pop)
+                        (cond ((and init (< curr-pop *population*)) 
+                                  (setf world (make-instance 'world))
+                                  (setf population (append population (list world)))
+                                  (init-asteroids world)
+                                  (asteroids-neural-net:init (neural-net world)))
+                              ((<= curr-pop *population*) (setf world (nth (- curr-pop 1) population)) (init-asteroids world))))
+
+                      ((and (not (alive world)) (>= curr-pop *population*) (< curr-gen *generations*))
+                        (sdl:clear-display sdl:*black*)
+                        (let ((best-world (make-instance 'world))
+                               (new-pop nil))
+
+                          (setf (neural-net best-world) best-player)
+                          (setf new-pop (list best-world))
+                          (do ((i 1 (+ i 1)))
+                                ((>= i *population*))
+                              (cond ((< i (/ *population* 2)) 
+                                      (let* ((p (select-random-player population (calculate-total-fit population)))
+                                             (net (asteroids-neural-net:mutate (neural-net p) *mutatation-rate*))
+                                             (new-p (make-instance 'world)))
+                                        (setf (neural-net new-p) net)
+                                        (setf new-pop (append new-pop (list new-p)))))
+                  
+                                    (t
+                                      (let* ((p1 (select-random-player population (calculate-total-fit population)))
+                                             (p2 (select-random-player population (calculate-total-fit population)))
+                                             (child (asteroids-neural-net:crossover (neural-net p1) (neural-net p2)))
+                                             (child-mutated (asteroids-neural-net:mutate child *mutatation-rate*))
+                                             (p (make-instance 'world)))  
+                                         
+                                        (setf (neural-net p) child-mutated)
+                                        (setf new-pop (append new-pop (list p)))))))
+                          (setf population new-pop)
+                          (setf init nil)
+                          (incf curr-gen)
+                          (setf curr-pop 1)
+                          (setf world (first population))
+                          (init-asteroids world)))
+                          
+                      ((and (not (alive world)) (>= curr-pop *population*) (>= curr-gen *generations*)) (sdl:clear-display sdl:*black*)))
 
                 (sdl:update-display))))))
 
