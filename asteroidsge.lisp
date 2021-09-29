@@ -25,9 +25,9 @@
 (defparameter *bullet-velocity* 300)
 (defparameter *shoot-delay* 15)
 
-(defparameter *time* 500)
-(defparameter *population* 4)
-(defparameter *generations* 3)
+(defparameter *time* 1000)
+(defparameter *population* 10)
+(defparameter *generations* 10)
 (defparameter *mutatation-rate* .2)
 
 (defun get-ticks ()
@@ -250,7 +250,7 @@
       (cons (/ (acceleration (ship world)) 1d0) direction)))
 
 (defmethod calculate-fitness ((world world))
-  (setf (fitness world) (+ (* (shots-hit world) 10.0) (lifetime world)  (expt (/ (shots-hit world) (shots-fired world)) 2.0))))
+  (setf (fitness world) (+ (* (shots-hit world) 1000.0) (/ (lifetime world) 10)  (expt (/ (shots-hit world) (shots-fired world)) 5.0))))
                                                                                                     
 
 (defun create-asteroids (num state pos randomp world)
