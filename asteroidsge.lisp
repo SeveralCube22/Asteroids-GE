@@ -25,7 +25,7 @@
 (defparameter *bullet-velocity* 300)
 (defparameter *shoot-delay* 15)
 
-(defparameter *time* 1000)
+(defparameter *survival-time* 1000)
 (defparameter *population* 10)
 (defparameter *generations* 10)
 (defparameter *mutatation-rate* .2)
@@ -49,7 +49,7 @@
      (shooting :accessor shooting :initform nil :initarg :shooting)))
 
 (defclass asteroid ()
-    ((velocity-angle :accessor velocity-angle :initform (+ 0 (random 340)) :initarg :velocity-angle)
+    ((velocity-angle :accessor velocity-angle :initform (+ 0 (random 360)) :initarg :velocity-angle)
      (velocity :accessor velocity :initarg :velocity)
      (pos :accessor pos :initarg :pos)
      (state :accessor state :initarg :state) 
