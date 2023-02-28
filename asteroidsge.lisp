@@ -297,7 +297,7 @@
                         )))
 
 (defmethod alive ((world world))
-  (and (not (game-over world)) (< (curr-time world) *time*)))
+  (and (not (game-over world)) (< (curr-time world) *survival-time*)))
 
 (defun calculate-total-fit (population)
   (let ((total-fit 0.0))
